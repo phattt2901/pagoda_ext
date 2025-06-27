@@ -9,9 +9,12 @@
     import (
         "fmt"
         "net/url"
+        "reflect" // Added for type inspection
         "strconv"
+        "strings" // Added for string manipulation
 
         "entgo.io/ent/dialect/sql"
+        "{{ $.Config.Package }}/predicate" // For generic predicate type
         "github.com/labstack/echo/v4"
 
         "{{ $.Config.Package }}"
@@ -160,8 +163,76 @@
 
         func (h *Handler) {{ $n.Name }}List(ctx echo.Context) (*EntityList, error) {
             page, offset := h.getPageAndOffset(ctx)
-            res, err := h.client.{{ $n.Name }}.
-                Query().
+            queryParams := ctx.QueryParams()
+            var predicates []predicate.{{ $n.Name }}
+
+            // --- Filtering Logic Start ---
+            // This section iterates over query parameters and attempts to build Ent predicates.
+            // It currently supports exact matches for string, bool, and int fields.
+            // Query parameter keys are matched against entity field names (original or snake_case).
+            // For more advanced filtering (e.g., LIKE, GT, LT, date ranges, relations),
+            // this logic would need to be extended.
+            for key, values := range queryParams {
+                if len(values) == 0 || values[0] == "" {
+                    continue
+                }
+                value := values[0] // Use the first value for simplicity
+
+                // Skip pagination param
+                if key == h.Config.PageQueryKey {
+                    continue
+                }
+
+                // Attempt to match query param key to an entity field
+                {{- range $f := $n.Fields }}
+                    {{- $fieldNameGo := fieldName $f.Name }}
+                    {{- $fieldPkg := $n.Package }}
+                    {{- /* Convert CamelCase field name to snake_case for typical query param convention */}}
+                    {{- $fieldQueryParam := camelToSnake $fieldNameGo }}
+
+                    if key == "{{ $f.Name }}" || key == "{{ $fieldQueryParam }}" { // Check against original and snake_case
+                        {{- if eq $f.Type.String "string" }}
+                            predicates = append(predicates, {{ $fieldPkg }}.{{ $fieldNameGo }}EQ(value))
+                        {{- else if eq $f.Type.String "bool" }}
+                            if boolVal, err := strconv.ParseBool(value); err == nil {
+                                predicates = append(predicates, {{ $fieldPkg }}.{{ $fieldNameGo }}EQ(boolVal))
+                            }
+                        {{- else if eq $f.Type.String "int" }} {{/* Handle other int types if necessary e.g. int64, int32 */}}
+                            if intVal, err := strconv.Atoi(value); err == nil {
+                                predicates = append(predicates, {{ $fieldPkg }}.{{ $fieldNameGo }}EQ(intVal))
+                            }
+                        {{- else if $f.IsEnum }}
+                            // For Enums, the value should match one of the defined enum constants.
+                            // This assumes the enum type in Go is string.
+                            // Validation that 'value' is a valid enum constant might be needed.
+                            // Example: predicates = append(predicates, {{ $fieldPkg }}.{{ $fieldNameGo }}EQ({{ $fieldPkg }}.{{ $fieldNameGo }}(value)))
+                            // This requires the enum type to have a string underlying type and the value to match.
+                            // For robust enum handling, more complex logic or a map of string to enum values might be needed.
+                            // For now, if it's a string-based enum, try direct comparison.
+                            // This is a simplified approach.
+                            // It might be safer to check against {{ $fieldPkg }}.{{ $fieldNameGo }}Values()
+                            isMatch := false
+                            for _, enumConst := range {{ $fieldPkg }}.{{ $fieldNameGo }}Values() {
+                                if string(enumConst) == value {
+                                    isMatch = true
+                                    break
+                                }
+                            }
+                            if isMatch {
+                                predicates = append(predicates, {{ $fieldPkg }}.{{ $fieldNameGo }}EQ({{ $fieldPkg }}.{{ $fieldNameGo }}(value)))
+                            }
+                        {{- end }}
+                    }
+                {{- end }}
+            }
+            // --- Filtering Logic End ---
+
+            query := h.client.{{ $n.Name }}.Query()
+            if len(predicates) > 0 {
+                query = query.Where(predicates...)
+            }
+
+            res, err := query.
                 Limit(h.Config.ItemsPerPage+1).
                 Offset(offset).
                 Order({{ $n.Package }}.ByID(sql.OrderDesc())).

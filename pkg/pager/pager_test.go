@@ -72,3 +72,124 @@ func TestPager_GetOffset(t *testing.T) {
 	pgr.Page = 3
 	assert.Equal(t, 40, pgr.GetOffset())
 }
+
+func TestPager_PageURL(t *testing.T) {
+	e := echo.New()
+
+	tests := []struct {
+		name               string
+		initialURL         string // Full path with query, e.g., "/items?filter=active"
+		itemsPerPage       int
+		targetPage         int
+		expectedQueryPairs map[string]string // Expected key-value pairs, order doesn't matter
+	}{
+		{
+			name:               "no params, target page 2",
+			initialURL:         "/items",
+			itemsPerPage:       10,
+			targetPage:         2,
+			expectedQueryPairs: map[string]string{"page": "2"},
+		},
+		{
+			name:               "no params, target page 1",
+			initialURL:         "/items",
+			itemsPerPage:       10,
+			targetPage:         1,
+			expectedQueryPairs: map[string]string{}, // Page 1, page param omitted
+		},
+		{
+			name:               "no params, target page 0 (should be like 1)",
+			initialURL:         "/items",
+			itemsPerPage:       10,
+			targetPage:         0,
+			expectedQueryPairs: map[string]string{}, // Page 1, page param omitted
+		},
+		{
+			name:               "existing param, target page 2",
+			initialURL:         "/items?filter=active",
+			itemsPerPage:       10,
+			targetPage:         2,
+			expectedQueryPairs: map[string]string{"filter": "active", "page": "2"},
+		},
+		{
+			name:               "existing param, target page 1",
+			initialURL:         "/items?filter=active",
+			itemsPerPage:       10,
+			targetPage:         1,
+			expectedQueryPairs: map[string]string{"filter": "active"}, // Page 1, page param omitted
+		},
+		{
+			name:               "multiple existing params, target page 3",
+			initialURL:         "/items?filter=active&sort=name",
+			itemsPerPage:       10,
+			targetPage:         3,
+			expectedQueryPairs: map[string]string{"filter": "active", "sort": "name", "page": "3"},
+		},
+		{
+			name:               "existing page param, target new page",
+			initialURL:         "/items?page=2&filter=pending",
+			itemsPerPage:       10,
+			targetPage:         3,
+			expectedQueryPairs: map[string]string{"filter": "pending", "page": "3"},
+		},
+		{
+			name:               "existing page param, target page 1",
+			initialURL:         "/items?page=2&filter=pending",
+			itemsPerPage:       10,
+			targetPage:         1,
+			expectedQueryPairs: map[string]string{"filter": "pending"},
+		},
+		{
+			name:               "param with special chars",
+			initialURL:         "/items?search=hello%20world%20%26%20co&existing=true", // Pre-encoded
+			itemsPerPage:       10,
+			targetPage:         2,
+			expectedQueryPairs: map[string]string{"search": "hello world & co", "existing": "true", "page": "2"},
+		},
+		{
+			name:               "empty initial query, target page 1",
+			initialURL:         "/items?",
+			itemsPerPage:       10,
+			targetPage:         1,
+			expectedQueryPairs: map[string]string{},
+		},
+		{
+			name:               "empty initial query, target page 2",
+			initialURL:         "/items?",
+			itemsPerPage:       10,
+			targetPage:         2,
+			expectedQueryPairs: map[string]string{"page": "2"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Using NewContext from pkg/tests which sets up a basic echo.Context
+			ctx, _ := tests.NewContext(e, tt.initialURL)
+			p := NewPager(ctx, tt.itemsPerPage)
+			actualURLString := p.PageURL(tt.targetPage)
+
+			if len(tt.expectedQueryPairs) == 0 {
+				assert.Equal(t, "", actualURLString, "URL string should be empty if no params")
+				return
+			}
+
+			// Parse the actual URL string
+			parsedActualURL, err := url.Parse(actualURLString)
+			assert.NoError(t, err, "Generated URL string should be parseable")
+			actualQueryParams := parsedActualURL.Query()
+
+			// Compare lengths
+			assert.Equal(t, len(tt.expectedQueryPairs), len(actualQueryParams), "Number of query parameters should match")
+
+			// Compare key-value pairs
+			for k, expectedVal := range tt.expectedQueryPairs {
+				actualVal, ok := actualQueryParams[k]
+				assert.True(t, ok, fmt.Sprintf("Expected query parameter '%s' to be present", k))
+				if ok {
+					assert.Equal(t, expectedVal, actualVal[0], fmt.Sprintf("Value for query parameter '%s' should match", k))
+				}
+			}
+		})
+	}
+}

@@ -2,6 +2,7 @@ package pager
 
 import (
 	"math"
+	"net/url" // Added for url.Values
 	"strconv"
 
 	"github.com/labstack/echo/v4"
@@ -23,18 +24,31 @@ type Pager struct {
 
 	// Pages stores the total amount of pages in the result set.
 	Pages int
+
+	// QueryParams stores all query parameters from the request for link generation.
+	QueryParams url.Values
 }
 
 // NewPager creates a new Pager.
 func NewPager(ctx echo.Context, itemsPerPage int) Pager {
+	queryParams := ctx.QueryParams()
 	p := Pager{
 		ItemsPerPage: itemsPerPage,
 		Pages:        1,
 		Page:         1,
+		QueryParams:  make(url.Values), // Initialize the map
 	}
 
-	if page := ctx.QueryParam(QueryKey); page != "" {
-		if pageInt, err := strconv.Atoi(page); err == nil {
+	// Deep copy queryParams to avoid modifying the original request's map
+	for k, v := range queryParams {
+		// http.Request.URL.Query() returns a map[string][]string
+		// but echo.Context.QueryParams() returns url.Values which is map[string][]string
+		// so direct assignment is fine.
+		p.QueryParams[k] = v
+	}
+
+	if pageStr := queryParams.Get(QueryKey); pageStr != "" {
+		if pageInt, err := strconv.Atoi(pageStr); err == nil {
 			if pageInt > 0 {
 				p.Page = pageInt
 			}
@@ -78,4 +92,28 @@ func (p *Pager) GetOffset() int {
 		p.Page = 1
 	}
 	return (p.Page - 1) * p.ItemsPerPage
+}
+
+// PageURL generates a URL query string for a given page number,
+// preserving existing query parameters.
+func (p *Pager) PageURL(pageNumber int) string {
+	// Create a copy of the existing query parameters to avoid modifying the original
+	newParams := make(url.Values)
+	for k, v := range p.QueryParams {
+		newParams[k] = v
+	}
+
+	// Set the desired page number
+	if pageNumber <= 1 {
+		// If page is 1 or less, remove the page query param for a cleaner URL,
+		// assuming page 1 is the default if the param is absent.
+		newParams.Del(QueryKey)
+	} else {
+		newParams.Set(QueryKey, strconv.Itoa(pageNumber))
+	}
+
+	if len(newParams) == 0 {
+		return ""
+	}
+	return "?" + newParams.Encode()
 }

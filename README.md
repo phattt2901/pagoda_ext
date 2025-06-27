@@ -423,7 +423,7 @@ The _admin panel_ currently includes:
 There are no separate templates or interfaces for the admin section (see [screenshots](#screenshots)).
 Background task monitoring is no longer part of the integrated admin panel; see the [Tasks](#tasks) section for alternatives.
 
-Users with admin [access](#access) will see additional links on the default sidebar at the bottom. As with all default UI components, you can easily move these pages and links to a dedicated section, layout, etc. Clicking on the link for any given entity type will provide a pageable table of entities and the ability to add/edit/delete.
+Users with admin [access](#access) will see additional links on the default sidebar at the bottom. As with all default UI components, you can easily move these pages and links to a dedicated section, layout, etc. Clicking on the link for any given entity type will provide a pageable table of entities and the ability to add/edit/delete. Entity lists now support basic filtering via query parameters (e.g., `?field_name=value`) and pagination links will preserve these filters.
 
 ### Code generation
 

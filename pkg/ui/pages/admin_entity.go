@@ -7,6 +7,7 @@ import (
 	"entgo.io/ent/entc/load"
 	"github.com/labstack/echo/v4"
 	"github.com/mikestefanello/pagoda/ent/admin"
+	"github.com/mikestefanello/pagoda/pkg/pager" // Added pager import
 	"github.com/mikestefanello/pagoda/pkg/routenames"
 	"github.com/mikestefanello/pagoda/pkg/ui"
 	. "github.com/mikestefanello/pagoda/pkg/ui/components"
@@ -106,11 +107,49 @@ func AdminEntityList(
 			),
 			TBody(genRows()),
 		),
-		Pager(
-			entityList.Page,
-			r.Path(routenames.AdminEntityAdd(entityTypeName)),
-			entityList.HasNextPage,
-			"",
-		),
+		renderAdminPager(r, entityList), // Updated Pager call
 	})
+}
+
+// renderAdminPager helper function to encapsulate pager logic
+func renderAdminPager(r *ui.Request, entityList *admin.EntityList) Node {
+	// This is a temporary workaround. Ideally, the handler creates the pager
+	// and passes necessary info (TotalItems, ItemsPerPage) via entityList or another way.
+	// For now, we'll use a default ItemsPerPage and estimate TotalItems if not available.
+	const itemsPerPage = 25 // Default, should come from config or handler
+
+	p := pager.NewPager(r.Context, itemsPerPage)
+
+	// entityList.TotalItems is not currently set by the generated handler.
+	// We only have HasNextPage. This makes accurate total page count difficult here.
+	// The Pager component itself primarily cares about prev/next links.
+	// For a full display of "Page X of Y", TotalItems is needed.
+	// Let's assume for now we only enable/disable based on HasNextPage and current page.
+	// p.SetItems(entityList.TotalItems) // This would be ideal
+
+	currentPage := entityList.Page
+	hasNext := entityList.HasNextPage
+
+	prevPageURL := ""
+	if currentPage > 1 {
+		prevPageURL = p.PageURL(currentPage - 1)
+	}
+
+	nextPageURL := ""
+	if hasNext {
+		nextPageURL = p.PageURL(currentPage + 1)
+	}
+
+	// The hxTarget for admin panel lists would typically be the main content area
+	// holding the table and pager itself, if HTMX is used for pagination.
+	// For now, an empty string means normal links.
+	hxTarget := "" // Example: "#admin-entity-list-container"
+
+	return Pager(
+		currentPage,
+		prevPageURL,
+		nextPageURL,
+		hasNext,
+		hxTarget,
+	)
 }

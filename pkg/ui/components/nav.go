@@ -27,25 +27,23 @@ func MenuLink(r *ui.Request, icon Node, title, routeName string, routeParams ...
 	)
 }
 
-func Pager(page int, path string, hasNext bool, hxTarget string) Node {
-	href := func(page int) string {
-		return fmt.Sprintf("%s?%s=%d",
-			path,
-			pager.QueryKey,
-			page,
-		)
-	}
-
+// Pager generates pagination controls.
+// currentPage is the current page number.
+// prevPageURL is the URL for the previous page; empty if no previous page.
+// nextPageURL is the URL for the next page; empty if no next page.
+// hasNext is true if there is a next page (used to enable/disable next button more explicitly than just checking nextPageURL).
+// hxTarget is an optional htmx target for AJAX pagination.
+func Pager(currentPage int, prevPageURL string, nextPageURL string, hasNext bool, hxTarget string) Node {
 	return Div(
 		Class("join"),
 		A(
 			Class("join-item btn"),
-			Text("«"),
-			If(page <= 1, Disabled()),
-			Href(href(page-1)),
-			Iff(len(hxTarget) > 0, func() Node {
+			Text("«"), // Previous
+			If(currentPage <= 1 || prevPageURL == "", Disabled()),
+			Href(prevPageURL), // Use pre-generated URL
+			Iff(len(hxTarget) > 0 && prevPageURL != "", func() Node {
 				return Group{
-					Attr("hx-get", href(page-1)),
+					Attr("hx-get", prevPageURL),
 					Attr("hx-swap", "outerHTML"),
 					Attr("hx-target", hxTarget),
 				}
@@ -53,16 +51,16 @@ func Pager(page int, path string, hasNext bool, hxTarget string) Node {
 		),
 		Button(
 			Class("join-item btn"),
-			Textf("Page %d", page),
+			Textf("Page %d", currentPage),
 		),
 		A(
 			Class("join-item btn"),
-			Text("»"),
-			If(!hasNext, Disabled()),
-			Href(href(page+1)),
-			Iff(len(hxTarget) > 0, func() Node {
+			Text("»"), // Next
+			If(!hasNext || nextPageURL == "", Disabled()),
+			Href(nextPageURL), // Use pre-generated URL
+			Iff(len(hxTarget) > 0 && nextPageURL != "" && hasNext, func() Node {
 				return Group{
-					Attr("hx-get", href(page+1)),
+					Attr("hx-get", nextPageURL),
 					Attr("hx-swap", "outerHTML"),
 					Attr("hx-target", hxTarget),
 				}
