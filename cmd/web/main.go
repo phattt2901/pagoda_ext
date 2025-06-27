@@ -12,7 +12,8 @@ import (
 	"github.com/mikestefanello/pagoda/pkg/handlers"
 	"github.com/mikestefanello/pagoda/pkg/log"
 	"github.com/mikestefanello/pagoda/pkg/services"
-	"github.com/mikestefanello/pagoda/pkg/tasks"
+	"github.com/riverqueue/river" // Added River import
+	// "github.com/mikestefanello/pagoda/pkg/tasks" // Removed backlite related task registration
 )
 
 func main() {
@@ -29,10 +30,25 @@ func main() {
 	}
 
 	// Register all task queues.
-	tasks.Register(c)
+	// tasks.Register(c) // This will be for River workers later
 
-	// Start the task runner to execute queued tasks.
-	c.Tasks.Start(context.Background())
+	// Migrate River schema
+	if c.River != nil {
+		log.Default().Info("Migrating River schema...")
+		if err := c.River.Migrate(context.Background(), river.MigrationDirectionUp, nil); err != nil {
+			fatal("failed to migrate River schema", err)
+		}
+		log.Default().Info("River schema migration complete.")
+
+		// Start the River client to process jobs.
+		// Workers need to be registered with the client before starting.
+		// This will be handled in the pkg/tasks/register.go and called before starting.
+		log.Default().Info("Starting River client...")
+		if err := c.River.Start(context.Background()); err != nil {
+			fatal("failed to start River client", err)
+		}
+		log.Default().Info("River client started.")
+	}
 
 	// Start the server.
 	go func() {

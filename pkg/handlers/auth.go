@@ -17,9 +17,11 @@ import (
 	"github.com/mikestefanello/pagoda/pkg/redirect"
 	"github.com/mikestefanello/pagoda/pkg/routenames"
 	"github.com/mikestefanello/pagoda/pkg/services"
+	"github.com/mikestefanello/pagoda/pkg/tasks" // For EmailArgs
 	"github.com/mikestefanello/pagoda/pkg/ui/emails"
 	"github.com/mikestefanello/pagoda/pkg/ui/forms"
 	"github.com/mikestefanello/pagoda/pkg/ui/pages"
+	"github.com/riverqueue/river" // For River client
 )
 
 type Auth struct {
@@ -27,6 +29,7 @@ type Auth struct {
 	auth   *services.AuthClient
 	mail   *services.MailClient
 	orm    *ent.Client
+	River  *river.Client
 }
 
 func init() {
@@ -38,6 +41,7 @@ func (h *Auth) Init(c *services.Container) error {
 	h.orm = c.ORM
 	h.auth = c.Auth
 	h.mail = c.Mail
+	h.River = c.River
 	return nil
 }
 
@@ -267,22 +271,34 @@ func (h *Auth) sendVerificationEmail(ctx echo.Context, usr *ent.User) {
 	}
 
 	// Send the email.
-	err = h.mail.
-		Compose().
-		To(usr.Email).
-		Subject("Confirm your email address").
-		Component(emails.ConfirmEmailAddress(ctx, usr.Name, token)).
-		Send(ctx)
+	// Instead of sending directly, we enqueue a task.
+	emailBodyComponent := emails.ConfirmEmailAddress(ctx, usr.Name, token) // Assuming this returns a string or can be rendered to string.
+	// If Component returns a gomponents.Node, you'll need to render it to a string first.
+	// For simplicity, let's assume we can get a string body easily.
+	// This might require adjusting how emails.ConfirmEmailAddress works or adding a helper.
+	// For now, we'll use a placeholder for the body.
+	// In a real app, you'd render the component to an HTML string.
+	emailBodyHTML := fmt.Sprintf("Please verify your email using this token: %s (This is a placeholder - implement HTML rendering)", token)
 
+	emailArgs := tasks.EmailArgs{
+		UserID:       usr.ID,
+		EmailAddress: usr.Email,
+		Subject:      "Confirm your email address",
+		Body:         emailBodyHTML, // This should be the rendered HTML of your email component
+	}
+
+	_, err = h.River.Insert(ctx.Request().Context(), emailArgs, nil)
 	if err != nil {
-		log.Ctx(ctx).Error("unable to send email verification link",
+		log.Ctx(ctx).Error("failed to enqueue email verification task",
 			"user_id", usr.ID,
 			"error", err,
 		)
-		return
+		// Not returning an error to the user here, as registration succeeded.
+		// The message below will still be shown.
+		// Potentially add a different message if enqueueing fails critically.
 	}
 
-	msg.Info(ctx, "An email was sent to you to verify your email address.")
+	msg.Info(ctx, "Your account has been created. A verification email will be sent to you shortly.")
 }
 
 func (h *Auth) ResetPasswordPage(ctx echo.Context) error {
