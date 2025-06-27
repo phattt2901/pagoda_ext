@@ -134,9 +134,10 @@ Go server-side rendered HTML combined with the projects below enable you to crea
 
 #### Storage
 
-- [SQLite](https://sqlite.org/): A small, fast, self-contained, high-reliability, full-featured, SQL database engine and the most used database engine in the world.
+- [PostgreSQL](https://www.postgresql.org/): A powerful, open source object-relational database system.
+- [River](https://github.com/riverqueue/river): A robust job queueing system for Go that uses PostgreSQL for its backend.
 
-Originally, Postgres and Redis were chosen as defaults but since the aim of this project is rapid, simple development, it was changed to SQLite which now provides the primary data storage as well as persistent, background [task queues](#tasks). For [caching](#cache), a simple in-memory solution is provided. If you need to use something like Postgres or Redis, swapping those in can be done quickly and easily. For reference, [this branch](https://github.com/mikestefanello/pagoda/tree/postgres-redis) contains the code that included those (but is no longer maintained).
+This project uses PostgreSQL as its primary data store for application data and for its background [task queue](#tasks) system, powered by River. For [caching](#cache), a simple in-memory solution is provided.
 
 ### Screenshots
 
@@ -159,10 +160,6 @@ Originally, Postgres and Redis were chosen as defaults but since the aim of this
 #### User entity edit (admin panel)
 
 <img src="https://raw.githubusercontent.com/mikestefanello/readmeimages/main/pagoda/admin-user_edit.png" alt="User entity edit"/>
-
-#### Monitor task queues (provided by Backlite via the admin panel)
-
-<img src="https://raw.githubusercontent.com/mikestefanello/readmeimages/main/backlite/failed.png" alt="Manage task queues"/>
 
 ## Getting started
 
@@ -280,21 +277,20 @@ func TestMain(m *testing.M) {
 
 ## Database
 
-The database currently used is [SQLite](https://sqlite.org/) but you are free to use whatever you prefer. If you plan to continue using [Ent](https://entgo.io/), the incredible ORM, you can check their supported databases [here](https://entgo.io/docs/dialects). The database driver is provided by [go-sqlite3](https://github.com/mattn/go-sqlite3). A reference to the database is included in the `Container` if direct access is required.
+The database used is [PostgreSQL](https://www.postgresql.org/). If you plan to continue using [Ent](https://entgo.io/), the ORM, you can check their supported databases [here](https://entgo.io/docs/dialects) (PostgreSQL is well-supported). The database driver used is [pgx](https://github.com/jackc/pgx) (specifically `github.com/jackc/pgx/v5/stdlib`). A reference to the `*sql.DB` instance is included in the `Container` if direct access is required.
 
-Database configuration can be found and managed within the `config` package.
+Database configuration (DSN - Data Source Name) can be found and managed within the `config` package (see `config.PostgresDSN` and `config.PostgresTestDSN`).
 
 ### Auto-migrations
 
-[Ent](https://entgo.io/) provides automatic migrations which are executed on the database whenever the `Container` is created, which means they will run when the application starts.
+[Ent](https://entgo.io/) provides schema migration capabilities. The current setup in `pkg/services/container.go` uses `c.ORM.Schema.Create(context.Background())` which creates schema if it doesn't exist. For production environments, it's recommended to use Ent's versioned migrations.
+The [River](#tasks) task queue system also has its own schema (e.g., `river_jobs` table), which is migrated automatically when the application starts.
 
 ### Separate test database
 
-Since many tests can require a database, this application supports a separate database specifically for tests. Within the `config`, the test database can be specified at `Config.Database.TestConnection`, which is the database connection string that will be used. By default, this will be an in-memory SQLite database.
+Since many tests can require a database, this application supports a separate PostgreSQL database specifically for tests. Within the `config`, the test database DSN can be specified at `Config.Database.PostgresTestDSN`.
 
-When a `Container` is created, if the [environment](#environments) is set to `config.EnvTest`, the database client will connect to the test database instead and run migrations so your tests start with a clean, ready-to-go database.
-
-When this project was using Postgres, it would automatically drop and recreate the test database. Since the current default is in-memory, that is no longer needed. If you decide to use a test database not in-memory, you can alter the `Container` initialization code to do this for you.
+When a `Container` is created, if the [environment](#environments) is set to `config.EnvTest`, the database client will connect to this test database. Ent's auto-migration and River's migration will run, so your tests start with a clean, ready-to-go database.
 
 ## ORM
 
@@ -423,9 +419,9 @@ The admin panel functionality is considered to be in _beta_ and remains under ac
 
 The _admin panel_ currently includes:
 * A completely dynamic UI to manage all entities defined by _Ent_.
-* A section to monitor all [background tasks and queues](#tasks).
 
 There are no separate templates or interfaces for the admin section (see [screenshots](#screenshots)).
+Background task monitoring is no longer part of the integrated admin panel; see the [Tasks](#tasks) section for alternatives.
 
 Users with admin [access](#access) will see additional links on the default sidebar at the bottom. As with all default UI components, you can easily move these pages and links to a dedicated section, layout, etc. Clicking on the link for any given entity type will provide a pageable table of entities and the ability to add/edit/delete.
 
@@ -1040,35 +1036,38 @@ As shown in the previous examples, cache tags were provided because they can be 
 
 ## Tasks
 
-Tasks are queued operations to be executed in the background, either immediately, at a specific time, or after a given amount of time has passed. Some examples of tasks could be long-running operations, bulk processing, cleanup, notifications, etc.
+Tasks are queued operations executed asynchronously in the background. Examples include sending emails, processing large uploads, or performing long-running computations. This project uses [River](https://github.com/riverqueue/river) as its task queue system. River is a robust, high-performance job processing system for Go that leverages PostgreSQL for its backend.
 
-Since we're already using [SQLite](https://sqlite.org/) for our database, it's available to act as a persistent store for queued tasks so that tasks are never lost, can be retried until successful, and their concurrent execution can be managed. [Backlite](https://github.com/mikestefanello/backlite) is the library chosen to interface with [SQLite](https://sqlite.org/) and handle queueing tasks and processing them asynchronously. I wrote that specifically to address the requirements I wanted to satisfy for this project.
+The River client (`*river.Client`) is initialized as a service in the `Container` (`pkg/services/container.go`). River's database schema (e.g., the `river_jobs` table) is automatically migrated when the application starts.
 
-To make things easy, the _Backlite_ client is provided as a _Service_ on the `Container` which allows you to register queues and add tasks.
+### Defining Jobs and Workers
 
-Configuration for the _Backlite_ client is exposed through the app's yaml configuration. The required database schema will be automatically installed when the app starts.
+River tasks consist of two main parts:
+- **Job Arguments (`JobArgs`)**: A struct that defines the data required for a task. It must implement the `river.JobArgs` interface, including a `Kind()` method that returns a unique string identifier for the job type. An example is `EmailArgs` in `pkg/tasks/email_task.go`.
+- **Workers (`Worker`)**: A struct that defines how a job is processed. It must implement the `river.Worker` interface, primarily the `Work()` method which contains the job execution logic. Workers can have dependencies injected (like the service container) to access other application services. An example is `EmailWorker` in `pkg/tasks/email_task.go`.
 
-### Queues
+### Registering Workers
 
-A full example of a queue implementation can be found in `pkg/tasks` with an interactive form to create a task and add to the queue at `/task` (see `pkg/handlers/task.go`). Also refer to the [Backlite](https://github.com/mikestefanello/backlite) documentation for reference and examples.
+Workers must be registered with the River client so it knows how to process jobs of a specific kind. Worker registration is handled in `pkg/tasks/register.go` within the `RegisterRiverWorkers` function. This function is called during the River client initialization in `pkg/services/container.go`.
 
-See `pkg/tasks/register.go` for a simple way to register all of your queues and to easily pass the `Container` to them so the queue processor callbacks have access to all of your app's dependencies.
+### Enqueueing Jobs
 
-### Dispatcher
+Jobs can be enqueued using the River client's `Insert()` or `InsertTx()` (for transactional enqueueing) methods. For example, after a user registers, an `EmailTask` is enqueued in `pkg/handlers/auth.go`.
 
-The _task dispatcher_ is what manages the worker pool used for executing tasks in the background. It monitors incoming and scheduled tasks and handles sending them to the pool for execution by the queue's processor callback. This must be started in order for this to happen. In `cmd/web/main.go`, the _task dispatcher_ is automatically started when the app starts via:
+### Processing Jobs
 
-```go
-c.Tasks.Start(ctx)
-```
+The River client is started in `cmd/web/main.go` via `c.River.Start(context.Background())`. Once started, the client polls the database for new jobs and dispatches them to registered workers for processing based on configured queues.
 
-The app [configuration](#configuration) contains values to configure the client and dispatcher including how many goroutines to use, when to release stuck tasks back into the queue, and how often to cleanup retained tasks in the database.
+The application configuration (`config/config.yaml`) includes a `tasks` section, which (while originally for Backlite) can be adapted or referenced for River's queue configurations (e.g., number of workers per queue, though River's primary queue config is done in code when initializing the `river.Client`).
 
-When the app is shutdown, the dispatcher is given 10 seconds to wait for any in-progress tasks to finish execution. This can be changed in `cmd/web/main.go`.
+When the app shuts down, the River client is stopped gracefully, allowing in-progress jobs a chance to complete (timeout configured in `pkg/services/container.go`).
 
-### Monitoring tasks and queues
+### Monitoring Tasks and Queues
 
-The [admin panel](#admin-panel) contains the UI provided by [Backlite](https://github.com/mikestefanello/backlite) in order to fully monitor all tasks and queues from within your browser.
+River itself does not bundle a UI within this application. For monitoring and managing jobs, you can:
+- Use [RiverUI](https://github.com/riverqueue/riverui), a separate web interface for River, which you would need to set up and run independently.
+- Query the `river_jobs` table directly in your PostgreSQL database.
+- Integrate other logging and monitoring tools based on River's logging output and events.
 
 ## Cron
 
@@ -1213,19 +1212,18 @@ Thank you to all the following amazing projects for making this possible.
 - [afero](https://github.com/spf13/afero)
 - [air](https://github.com/air-verse/air)
 - [alpinejs](https://github.com/alpinejs/alpine)
-- [backlite](https://github.com/mikestefanello/backlite)
 - [daisyui](https://github.com/saadeghi/daisyui)
 - [echo](https://github.com/labstack/echo)
 - [ent](https://github.com/ent/ent)
 - [go](https://go.dev/)
-- [go-sqlite3](https://github.com/mattn/go-sqlite3)
 - [gomponents](https://github.com/maragudk/gomponents)
 - [goquery](https://github.com/PuerkitoBio/goquery)
 - [htmx](https://github.com/bigskysoftware/htmx)
 - [jwt](https://github.com/golang-jwt/jwt)
 - [otter](https://github.com/maypok86/otter)
+- [pgx](https://github.com/jackc/pgx)
+- [river](https://github.com/riverqueue/river)
 - [sessions](https://github.com/gorilla/sessions)
-- [sqlite](https://sqlite.org/)
 - [tailwindcss](https://github.com/tailwindlabs/tailwindcss)
 - [testify](https://github.com/stretchr/testify)
 - [validator](https://github.com/go-playground/validator)

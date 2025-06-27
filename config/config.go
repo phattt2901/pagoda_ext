@@ -90,9 +90,11 @@ type (
 
 	// DatabaseConfig stores the database configuration.
 	DatabaseConfig struct {
-		Driver         string
-		Connection     string
-		TestConnection string
+		Driver           string
+		Connection       string // For SQLite
+		TestConnection   string // For SQLite
+		PostgresDSN      string // For PostgreSQL
+		PostgresTestDSN  string // For PostgreSQL test
 	}
 
 	// FilesConfig stores the file system configuration.

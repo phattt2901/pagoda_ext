@@ -10,7 +10,7 @@ import (
 	"entgo.io/ent/entc/gen"
 	"entgo.io/ent/entc/load"
 	"github.com/labstack/echo/v4"
-	"github.com/mikestefanello/backlite/ui"
+	// "github.com/mikestefanello/backlite/ui" // Removed Backlite UI
 	"github.com/mikestefanello/pagoda/ent"
 	"github.com/mikestefanello/pagoda/ent/admin"
 	"github.com/mikestefanello/pagoda/pkg/context"
@@ -24,10 +24,10 @@ import (
 )
 
 type Admin struct {
-	orm      *ent.Client
-	graph    *gen.Graph
-	admin    *admin.Handler
-	backlite *ui.Handler
+	orm   *ent.Client
+	graph *gen.Graph
+	admin *admin.Handler
+	// backlite *ui.Handler // Removed Backlite UI
 }
 
 func init() {
@@ -43,13 +43,14 @@ func (h *Admin) Init(c *services.Container) error {
 		PageQueryKey: pager.QueryKey,
 		TimeFormat:   time.DateTime,
 	})
-	h.backlite, err = ui.NewHandler(ui.Config{
-		DB:           c.Database,
-		BasePath:     "/admin/tasks",
-		ItemsPerPage: 25,
-		ReleaseAfter: c.Config.Tasks.ReleaseAfter,
-	})
-	return err
+	// h.backlite, err = ui.NewHandler(ui.Config{ // Removed Backlite UI
+	// 	DB:           c.Database,
+	// 	BasePath:     "/admin/tasks",
+	// 	ItemsPerPage: 25,
+	// 	ReleaseAfter: c.Config.Tasks.ReleaseAfter,
+	// })
+	// return err // Removed Backlite UI
+	return nil
 }
 
 func (h *Admin) Routes(g *echo.Group) {
@@ -74,13 +75,13 @@ func (h *Admin) Routes(g *echo.Group) {
 			Name = routenames.AdminEntityDeleteSubmit(n.Name)
 	}
 
-	tasks := ag.Group("/tasks")
-	tasks.GET("", h.Backlite(h.backlite.Running)).Name = routenames.AdminTasks
-	tasks.GET("/succeeded", h.Backlite(h.backlite.Succeeded))
-	tasks.GET("/failed", h.Backlite(h.backlite.Failed))
-	tasks.GET("/upcoming", h.Backlite(h.backlite.Upcoming))
-	tasks.GET("/task/:id", h.Backlite(h.backlite.Task))
-	tasks.GET("/completed/:id", h.Backlite(h.backlite.TaskCompleted))
+	// tasks := ag.Group("/tasks") // Removed Backlite UI
+	// tasks.GET("", h.Backlite(h.backlite.Running)).Name = routenames.AdminTasks // Removed Backlite UI
+	// tasks.GET("/succeeded", h.Backlite(h.backlite.Succeeded)) // Removed Backlite UI
+	// tasks.GET("/failed", h.Backlite(h.backlite.Failed)) // Removed Backlite UI
+	// tasks.GET("/upcoming", h.Backlite(h.backlite.Upcoming)) // Removed Backlite UI
+	// tasks.GET("/task/:id", h.Backlite(h.backlite.Task)) // Removed Backlite UI
+	// tasks.GET("/completed/:id", h.Backlite(h.backlite.TaskCompleted)) // Removed Backlite UI
 }
 
 // middlewareEntityLoad is middleware to extract the entity ID and attempt to load the given entity.
@@ -201,6 +202,7 @@ func (h *Admin) getEntitySchema(n *gen.Type) *load.Schema {
 	return nil
 }
 
+/* Removed Backlite UI helper
 func (h *Admin) Backlite(handler func(http.ResponseWriter, *http.Request) error) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		if id := c.Param("id"); id != "" {
@@ -209,3 +211,4 @@ func (h *Admin) Backlite(handler func(http.ResponseWriter, *http.Request) error)
 		return handler(c.Response().Writer, c.Request())
 	}
 }
+*/

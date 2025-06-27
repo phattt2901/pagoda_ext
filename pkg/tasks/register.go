@@ -2,9 +2,17 @@ package tasks
 
 import (
 	"github.com/mikestefanello/pagoda/pkg/services"
+	"github.com/riverqueue/river"
 )
 
-// Register registers all task queues with the task client.
-func Register(c *services.Container) {
-	c.Tasks.Register(NewExampleTaskQueue(c))
+// RegisterRiverWorkers registers all application River workers with the provided Workers instance.
+func RegisterRiverWorkers(workers *river.Workers, c *services.Container) {
+	// Create and register the EmailWorker
+	emailWorker := NewEmailWorker(c)
+	river.AddWorker(workers, emailWorker)
+
+	// TODO: Register other workers here as they are created
+	// For example:
+	// anotherWorker := NewAnotherWorker(c)
+	// river.AddWorker(workers, anotherWorker)
 }
